@@ -31,7 +31,8 @@ extern "C" {
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include <stdlib.h>
+#include "tusb_config.h"
 /* USER CODE END Includes */
 
 /* Exported types ------------------------------------------------------------*/
@@ -61,7 +62,27 @@ void Error_Handler(void);
 #define ONBOARD_LED_GPIO_Port GPIOC
 
 /* USER CODE BEGIN Private defines */
+#ifndef I2S_SPK_RATE_DEF
+	#define I2S_SPK_RATE_DEF 48000
+#endif //I2S_SPK_RATE_DEF
 
+#ifndef m_new
+    #define m_new(type, num) ((type *)(malloc(sizeof(type) * (num))))
+#endif //m_new
+
+typedef struct  {
+    uint32_t left;
+    uint32_t right;
+} i2s_32b_audio_sample;
+
+typedef struct  {
+    uint16_t left;
+    uint16_t right;
+} i2s_16b_audio_sample;
+//-------------------------
+// I2s defines
+//-------------------------
+#define SAMPLE_BUFFER_SIZE  (CFG_TUD_AUDIO_FUNC_1_MAX_SAMPLE_RATE/1000) // MAX sample rate divided by 1000. Size of 1 ms sample
 /* USER CODE END Private defines */
 
 #ifdef __cplusplus
