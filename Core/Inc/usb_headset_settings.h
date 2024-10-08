@@ -6,6 +6,7 @@ extern "C" {
 #endif
 
 #include <stdint.h>
+#include <stdbool.h>
 #include "tusb_config.h"
 
 typedef struct _usb_headset_settings_t {
@@ -22,9 +23,7 @@ typedef struct _usb_headset_settings_t {
 	uint16_t samples_in_i2s_frame_min;
 	uint16_t samples_in_i2s_frame_max;
 
-	bool mic_muted_by_user;
-	bool mic_live_status;
-
+	bool status_updated;
 } usb_headset_settings_t;
 
 #ifdef __cplusplus
