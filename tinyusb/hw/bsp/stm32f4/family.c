@@ -47,7 +47,7 @@ UART_HandleTypeDef UartHandle;
 #endif
 
 void board_init(void) {
-  board_clock_init();
+  //board_clock_init();
   //SystemCoreClockUpdate();
 
 #if CFG_TUSB_OS == OPT_OS_NONE

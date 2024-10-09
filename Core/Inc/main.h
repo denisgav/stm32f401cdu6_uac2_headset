@@ -70,12 +70,12 @@ void Error_Handler(void);
     #define m_new(type, num) ((type *)(malloc(sizeof(type) * (num))))
 #endif //m_new
 
-typedef struct  {
+typedef struct __attribute__((packed)) {
     uint32_t left;
     uint32_t right;
 } i2s_32b_audio_sample;
 
-typedef struct  {
+typedef struct __attribute__((packed))  {
     uint16_t left;
     uint16_t right;
 } i2s_16b_audio_sample;

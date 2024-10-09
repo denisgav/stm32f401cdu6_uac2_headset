@@ -10,17 +10,17 @@ extern "C" {
 #include <stdbool.h>
 
 typedef struct _ring_buf_t {
-    uint8_t *buffer;
+    uint32_t *buffer;
     size_t head;
     size_t tail;
     size_t size;
 } ring_buf_t;
 
-void ringbuf_init(ring_buf_t *rbuf, uint8_t *buffer, size_t size);
+void ringbuf_init(ring_buf_t *rbuf, uint32_t *buffer, size_t size);
 
-bool ringbuf_push(ring_buf_t *rbuf, uint8_t data);
+bool ringbuf_push(ring_buf_t *rbuf, uint32_t data);
 
-bool ringbuf_pop(ring_buf_t *rbuf, uint8_t *data);
+bool ringbuf_pop(ring_buf_t *rbuf, uint32_t *data);
 
 bool ringbuf_is_empty(ring_buf_t *rbuf);
 
