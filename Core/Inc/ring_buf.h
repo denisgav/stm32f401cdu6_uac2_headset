@@ -21,6 +21,7 @@ void ringbuf_init(ring_buf_t *rbuf, uint32_t *buffer, size_t size);
 bool ringbuf_push(ring_buf_t *rbuf, uint32_t data);
 
 bool ringbuf_pop(ring_buf_t *rbuf, uint32_t *data);
+bool ringbuf_pop_half_word_swap(ring_buf_t *rbuf, uint32_t *data);
 
 bool ringbuf_is_empty(ring_buf_t *rbuf);
 

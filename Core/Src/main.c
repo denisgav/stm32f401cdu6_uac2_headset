@@ -428,10 +428,11 @@ void refresh_i2s_connections(void) {
 	current_settings.samples_in_i2s_frame_max = (current_settings.sample_rate
 			+ 999) / 1000;
 
+	// Ring buffer contains 2 ms data
 	ring_buffer_storage = m_new(uint32_t,
-			current_settings.samples_in_i2s_frame_max * 2);
+			current_settings.samples_in_i2s_frame_max * 2 * 2);
 	ringbuf_init(&ring_buffer, ring_buffer_storage,
-			current_settings.samples_in_i2s_frame_max * 2);
+			current_settings.samples_in_i2s_frame_max * 2 * 2);
 
 	// Run transmit DMA
 	memset(spk_i2s_buf, 0x0, sizeof(spk_i2s_buf));
@@ -488,6 +489,8 @@ void usb_headset_tud_audio_rx_done_pre_read_handler(uint8_t rhport,
 		// Speaker data size received in the last frame
 		uint16_t usb_spk_data_size = tud_audio_n_read(func_id, spk_usb_read_buf,
 				n_bytes_received);
+		//uint16_t usb_spk_data_size = tud_audio_read(spk_usb_read_buf,
+		//		n_bytes_received);
 		uint16_t usb_sample_count = 0;
 
 		if (current_settings.resolution == 16) {
@@ -499,10 +502,14 @@ void usb_headset_tud_audio_rx_done_pre_read_handler(uint8_t rhport,
 				int32_t left = in[i * 2 + 0];
 				int32_t right = in[i * 2 + 1];
 
+				left <<= 16;
+				right <<= 16;
+
 				left = usb_to_i2s_32b_sample_convert(left, volume_db_left);
 				left = usb_to_i2s_32b_sample_convert(left, volume_db_master);
 				right = usb_to_i2s_32b_sample_convert(right, volume_db_right);
 				right = usb_to_i2s_32b_sample_convert(right, volume_db_master);
+
 				spk_32b_i2s_buffer[i].left = left;
 				spk_32b_i2s_buffer[i].right = right;
 			}
@@ -518,23 +525,13 @@ void usb_headset_tud_audio_rx_done_pre_read_handler(uint8_t rhport,
 				int32_t left = in[i * 2 + 0];
 				int32_t right = in[i * 2 + 1];
 
-
 				left = usb_to_i2s_32b_sample_convert(left, volume_db_left);
 				left = usb_to_i2s_32b_sample_convert(left, volume_db_master);
 				right = usb_to_i2s_32b_sample_convert(right, volume_db_right);
 				right = usb_to_i2s_32b_sample_convert(right, volume_db_master);
 
-				uint16_t left_msb = left >> 16;
-				uint16_t left_lsb = left & 0xFFFF;
-				uint32_t left_value_swap = (left_lsb << 16) | left_msb;
-
-				uint16_t right_msb = right >> 16;
-				uint16_t right_lsb = right & 0xFFFF;
-				uint32_t right_value_swap = (right_lsb << 16) | right_msb;
-
-
-				spk_32b_i2s_buffer[i].left = left_value_swap;
-				spk_32b_i2s_buffer[i].right = right_value_swap;
+				spk_32b_i2s_buffer[i].left = left;
+				spk_32b_i2s_buffer[i].right = right;
 			}
 			machine_i2s_write_stream(&spk_32b_i2s_buffer[0],
 					usb_sample_count * 2);
@@ -555,17 +552,17 @@ void usb_headset_tud_audio_tx_done_post_load_handler(uint8_t rhport,
 }
 
 int32_t usb_to_i2s_32b_sample_convert(int32_t sample, uint16_t volume_db) {
-	//int64_t sample_tmp = (int64_t) sample * (int64_t) volume_db;
-	//sample_tmp = sample_tmp >> 15;
-	//return (int32_t) sample_tmp;
-	return (int32_t)sample;
+	int64_t sample_tmp = (int64_t) sample * (int64_t) volume_db;
+	sample_tmp = sample_tmp >> 15;
+	return (int32_t) sample_tmp;
+	//return (int32_t)sample;
 }
 
 int16_t usb_to_i2s_16b_sample_convert(int16_t sample, uint16_t volume_db) {
-	//int32_t sample_tmp = (int32_t) sample * (int32_t) volume_db;
-	//sample_tmp = sample_tmp >> 15;
-	//return (int16_t) sample_tmp;
-	return (int16_t)sample;
+	int32_t sample_tmp = (int32_t) sample * (int32_t) volume_db;
+	sample_tmp = sample_tmp >> 15;
+	return (int16_t) sample_tmp;
+	//return (int16_t)sample;
 }
 
 //--------------------------------------------------------------------+
@@ -613,16 +610,12 @@ int machine_i2s_write_stream(uint32_t *buf_in, size_t size) {
 }
 
 void HAL_I2S_TxHalfCpltCallback(I2S_HandleTypeDef *hi2s) {
-	uint32_t sizeof_half_dma_buffer_in_words =
-			current_settings.samples_in_i2s_frame_max;
-	feed_dma(&spk_i2s_buf[0], sizeof_half_dma_buffer_in_words);
+	feed_dma(&spk_i2s_buf[0], current_settings.samples_in_i2s_frame_max);
 }
 
 void HAL_I2S_TxCpltCallback(I2S_HandleTypeDef *hi2s) {
-	uint32_t sizeof_half_dma_buffer_in_words =
-				current_settings.samples_in_i2s_frame_max;
-	feed_dma(&spk_i2s_buf[sizeof_half_dma_buffer_in_words],
-			sizeof_half_dma_buffer_in_words);
+	feed_dma(&spk_i2s_buf[current_settings.samples_in_i2s_frame_max],
+			current_settings.samples_in_i2s_frame_max);
 }
 
 uint32_t feed_dma(uint32_t *dma_buffer_p,
@@ -635,7 +628,7 @@ uint32_t feed_dma(uint32_t *dma_buffer_p,
 
 	if (available_data_words >= sizeof_half_dma_buffer_in_words) {
 		for (uint32_t i = 0; i < sizeof_half_dma_buffer_in_words; i++) {
-			ringbuf_pop(&ring_buffer, &dma_buffer_p[i]);
+			ringbuf_pop_half_word_swap(&ring_buffer, &dma_buffer_p[i]);
 		}
 		return available_data_words;
 	} else {

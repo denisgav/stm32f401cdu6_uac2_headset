@@ -37,6 +37,24 @@ bool ringbuf_pop(ring_buf_t *rbuf, uint32_t *data) {
     return true;
 }
 
+bool ringbuf_pop_half_word_swap(ring_buf_t *rbuf, uint32_t *data){
+	if (rbuf->head == rbuf->tail) {
+		// empty
+		return false;
+	}
+
+	uint32_t word_data = rbuf->buffer[rbuf->head];
+	uint32_t msb_data = word_data >> 16;
+	uint32_t lsb_data = word_data & 0xFFFF;
+
+	uint32_t res = lsb_data << 16;
+	res |= msb_data;
+
+	*data = res;
+	rbuf->head = (rbuf->head + 1) % rbuf->size;
+	return true;
+}
+
 bool ringbuf_is_empty(ring_buf_t *rbuf) {
     return rbuf->head == rbuf->tail;
 }
