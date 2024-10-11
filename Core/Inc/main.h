@@ -79,6 +79,10 @@ typedef struct __attribute__((packed))  {
     uint16_t left;
     uint16_t right;
 } i2s_16b_audio_sample;
+
+#define MIC_FORMAT_24B_TO_24B_SHIFT_VAL 4u
+#define MIC_FORMAT_24B_TO_16B_SHIFT_VAL 12u
+
 //-------------------------
 // I2s defines
 //-------------------------

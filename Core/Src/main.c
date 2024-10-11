@@ -56,26 +56,36 @@
 I2C_HandleTypeDef hi2c1;
 
 I2S_HandleTypeDef hi2s2;
+I2S_HandleTypeDef hi2s3;
 DMA_HandleTypeDef hdma_spi2_tx;
+DMA_HandleTypeDef hdma_spi3_rx;
 
 PCD_HandleTypeDef hpcd_USB_OTG_FS;
 
 /* USER CODE BEGIN PV */
 usb_headset_settings_t current_settings;
 
+// Buffer for speaker data
+ring_buf_t spk_ring_buffer;
+uint32_t *spk_ring_buffer_storage;
+
 // Buffer for microphone data
-ring_buf_t ring_buffer;
-uint32_t *ring_buffer_storage;
+ring_buf_t mic_ring_buffer;
+uint32_t *mic_ring_buffer_storage;
 
 // Buffer for speaker data
-//i2s_32b_audio_sample spk_i2s_buffer[SAMPLE_BUFFER_SIZE];
 i2s_32b_audio_sample spk_32b_i2s_buffer[SAMPLE_BUFFER_SIZE];
 uint8_t spk_usb_read_buf[SAMPLE_BUFFER_SIZE * 2 * 4 * 2]; // Max size of audio sample is  2 * 4. 2 Channels, 4 byte width sample
 uint32_t spk_i2s_buf[SAMPLE_BUFFER_SIZE * 2];
 
+// Buffer for microphone data
+uint32_t mic_usb_24b_buffer[SAMPLE_BUFFER_SIZE];
+uint16_t mic_usb_16b_buffer[SAMPLE_BUFFER_SIZE];
+uint8_t mic_usb_read_buf[SAMPLE_BUFFER_SIZE * 2 * 4 * 2]; // Max size of audio sample is  2 * 4. 2 Channels, 4 byte width sample
+uint32_t mic_i2s_buf[SAMPLE_BUFFER_SIZE * 2];
+i2s_32b_audio_sample mic_i2s_read_buffer[SAMPLE_BUFFER_SIZE];
+
 void led_blinking_task(void);
-void audio_task(void);
-void audio_control_task(void);
 
 void refresh_i2s_connections(void);
 
@@ -97,13 +107,20 @@ void usb_headset_tud_audio_tx_done_post_load_handler(uint8_t rhport,
 		uint16_t n_bytes_copied, uint8_t itf, uint8_t ep_in,
 		uint8_t cur_alt_setting);
 
-int machine_i2s_write_stream(uint32_t *buf_in, size_t size);
+int spk_machine_i2s_write_stream(uint32_t *buf_in, size_t size);
+int mic_machine_i2s_read_stream(uint32_t *buf_in, size_t size);
 
 void HAL_I2S_TxHalfCpltCallback(I2S_HandleTypeDef *hi2s);
 void HAL_I2S_TxCpltCallback(I2S_HandleTypeDef *hi2s);
+void HAL_I2S_RxHalfCpltCallback(I2S_HandleTypeDef *hi2s);
+void HAL_I2S_RxCpltCallback(I2S_HandleTypeDef *hi2s);
+//void HAL_I2S_ErrorCallback(I2S_HandleTypeDef *hi2s);
 
-uint32_t feed_dma(uint32_t *dma_buffer_p,
+uint32_t feed_spk_dma(uint32_t *dma_buffer_p,
 		uint32_t sizeof_half_dma_buffer_in_bytes);
+
+uint32_t empty_mic_dma(uint32_t *dma_buffer_p,
+		uint32_t sizeof_half_dma_buffer_in_words);
 
 void status_update_task(void);
 void display_ssd1306_info(void);
@@ -112,11 +129,13 @@ void display_ssd1306_info(void);
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
+void PeriphCommonClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_DMA_Init(void);
 static void MX_USB_OTG_FS_PCD_Init(void);
 static void MX_I2S2_Init(void);
 static void MX_I2C1_Init(void);
+static void MX_I2S3_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -149,6 +168,9 @@ int main(void)
   /* Configure the system clock */
   SystemClock_Config();
 
+  /* Configure the peripherals common clocks */
+  PeriphCommonClock_Config();
+
   /* USER CODE BEGIN SysInit */
 
   /* USER CODE END SysInit */
@@ -159,6 +181,7 @@ int main(void)
   MX_USB_OTG_FS_PCD_Init();
   MX_I2S2_Init();
   MX_I2C1_Init();
+  MX_I2S3_Init();
   /* USER CODE BEGIN 2 */
 
 	current_settings.sample_rate = I2S_SPK_RATE_DEF;
@@ -259,6 +282,25 @@ void SystemClock_Config(void)
 }
 
 /**
+  * @brief Peripherals Common Clock Configuration
+  * @retval None
+  */
+void PeriphCommonClock_Config(void)
+{
+  RCC_PeriphCLKInitTypeDef PeriphClkInitStruct = {0};
+
+  /** Initializes the peripherals clock
+  */
+  PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_I2S;
+  PeriphClkInitStruct.PLLI2S.PLLI2SN = 384;
+  PeriphClkInitStruct.PLLI2S.PLLI2SR = 5;
+  if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInitStruct) != HAL_OK)
+  {
+    Error_Handler();
+  }
+}
+
+/**
   * @brief I2C1 Initialization Function
   * @param None
   * @retval None
@@ -327,6 +369,40 @@ static void MX_I2S2_Init(void)
 }
 
 /**
+  * @brief I2S3 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_I2S3_Init(void)
+{
+
+  /* USER CODE BEGIN I2S3_Init 0 */
+
+  /* USER CODE END I2S3_Init 0 */
+
+  /* USER CODE BEGIN I2S3_Init 1 */
+
+  /* USER CODE END I2S3_Init 1 */
+  hi2s3.Instance = SPI3;
+  hi2s3.Init.Mode = I2S_MODE_MASTER_RX;
+  hi2s3.Init.Standard = I2S_STANDARD_PHILIPS;
+  hi2s3.Init.DataFormat = I2S_DATAFORMAT_32B;
+  hi2s3.Init.MCLKOutput = I2S_MCLKOUTPUT_DISABLE;
+  hi2s3.Init.AudioFreq = I2S_AUDIOFREQ_48K;
+  hi2s3.Init.CPOL = I2S_CPOL_LOW;
+  hi2s3.Init.ClockSource = I2S_CLOCK_PLL;
+  hi2s3.Init.FullDuplexMode = I2S_FULLDUPLEXMODE_DISABLE;
+  if (HAL_I2S_Init(&hi2s3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN I2S3_Init 2 */
+
+  /* USER CODE END I2S3_Init 2 */
+
+}
+
+/**
   * @brief USB_OTG_FS Initialization Function
   * @param None
   * @retval None
@@ -371,6 +447,9 @@ static void MX_DMA_Init(void)
   __HAL_RCC_DMA1_CLK_ENABLE();
 
   /* DMA interrupt init */
+  /* DMA1_Stream0_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream0_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream0_IRQn);
   /* DMA1_Stream4_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Stream4_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA1_Stream4_IRQn);
@@ -391,8 +470,8 @@ static void MX_GPIO_Init(void)
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOH_CLK_ENABLE();
-  __HAL_RCC_GPIOB_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
+  __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(ONBOARD_LED_GPIO_Port, ONBOARD_LED_Pin, GPIO_PIN_RESET);
@@ -411,7 +490,9 @@ static void MX_GPIO_Init(void)
 /* USER CODE BEGIN 4 */
 
 void refresh_i2s_connections(void) {
-	HAL_I2S_StateTypeDef dma_state = HAL_I2S_GetState(&hi2s2);
+	HAL_I2S_StateTypeDef dma_state;
+	// Stop speaker DMA
+	dma_state = HAL_I2S_GetState(&hi2s2);
 	if (dma_state != HAL_I2S_STATE_READY) {
 		HAL_StatusTypeDef stop_status = HAL_I2S_DMAStop(&hi2s2);
 		if (stop_status != HAL_OK) {
@@ -419,8 +500,17 @@ void refresh_i2s_connections(void) {
 		}
 	}
 
-	if (ring_buffer_storage != NULL) {
-		free(ring_buffer_storage);
+	// Stop microphone DMA
+	dma_state = HAL_I2S_GetState(&hi2s3);
+	if (dma_state != HAL_I2S_STATE_READY) {
+		HAL_StatusTypeDef stop_status = HAL_I2S_DMAStop(&hi2s3);
+		if (stop_status != HAL_OK) {
+			Error_Handler();
+		}
+	}
+
+	if (spk_ring_buffer_storage != NULL) {
+		free(spk_ring_buffer_storage);
 	}
 
 	current_settings.samples_in_i2s_frame_min = (current_settings.sample_rate)
@@ -429,18 +519,37 @@ void refresh_i2s_connections(void) {
 			+ 999) / 1000;
 
 	// Ring buffer contains 2 ms data
-	ring_buffer_storage = m_new(uint32_t,
+	spk_ring_buffer_storage = m_new(uint32_t,
 			current_settings.samples_in_i2s_frame_max * 2 * 2);
-	ringbuf_init(&ring_buffer, ring_buffer_storage,
+	ringbuf_init(&spk_ring_buffer, spk_ring_buffer_storage,
 			current_settings.samples_in_i2s_frame_max * 2 * 2);
 
-	// Run transmit DMA
+	mic_ring_buffer_storage = m_new(uint32_t,
+			current_settings.samples_in_i2s_frame_max * 2 * 2);
+	ringbuf_init(&mic_ring_buffer, mic_ring_buffer_storage,
+			current_settings.samples_in_i2s_frame_max * 2 * 2);
+
+	// Clear memories
 	memset(spk_i2s_buf, 0x0, sizeof(spk_i2s_buf));
+	memset(mic_i2s_buf, 0x0, sizeof(mic_i2s_buf));
+	memset(mic_usb_24b_buffer, 0x0, sizeof(mic_usb_24b_buffer));
+	memset(mic_usb_16b_buffer, 0x0, sizeof(mic_usb_16b_buffer));
+
+
+
 	uint16_t num_of_samples_in_buffer =
 			current_settings.samples_in_i2s_frame_max * 2;
+
+	// Run transmit DMA
 	HAL_StatusTypeDef tx_status = HAL_I2S_Transmit_DMA(&hi2s2, spk_i2s_buf,
 			num_of_samples_in_buffer);
 	if (tx_status != HAL_OK) {
+		Error_Handler();
+	}
+
+	HAL_StatusTypeDef rx_status = HAL_I2S_Receive_DMA(&hi2s3, mic_i2s_buf,
+			num_of_samples_in_buffer);
+	if (rx_status != HAL_OK) {
 		Error_Handler();
 	}
 }
@@ -513,7 +622,7 @@ void usb_headset_tud_audio_rx_done_pre_read_handler(uint8_t rhport,
 				spk_32b_i2s_buffer[i].left = left;
 				spk_32b_i2s_buffer[i].right = right;
 			}
-			machine_i2s_write_stream(&spk_32b_i2s_buffer[0],
+			spk_machine_i2s_write_stream(&spk_32b_i2s_buffer[0],
 					usb_sample_count * 2);
 			//}
 		} else if (current_settings.resolution == 24) {
@@ -533,7 +642,7 @@ void usb_headset_tud_audio_rx_done_pre_read_handler(uint8_t rhport,
 				spk_32b_i2s_buffer[i].left = left;
 				spk_32b_i2s_buffer[i].right = right;
 			}
-			machine_i2s_write_stream(&spk_32b_i2s_buffer[0],
+			spk_machine_i2s_write_stream(&spk_32b_i2s_buffer[0],
 					usb_sample_count * 2);
 			//}
 		}
@@ -542,13 +651,69 @@ void usb_headset_tud_audio_rx_done_pre_read_handler(uint8_t rhport,
 
 void usb_headset_tud_audio_tx_done_pre_load_handler(uint8_t rhport, uint8_t itf,
 		uint8_t ep_in, uint8_t cur_alt_setting) {
-
+	if (current_settings.resolution == 24) {
+		uint32_t buffer_size = current_settings.samples_in_i2s_frame_min
+				* CFG_TUD_AUDIO_FUNC_1_FORMAT_2_N_BYTES_PER_SAMPLE_TX
+				* CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_TX;
+		tud_audio_write(&(mic_usb_24b_buffer[0]), buffer_size);
+	} else {
+		uint32_t buffer_size = current_settings.samples_in_i2s_frame_min
+				* CFG_TUD_AUDIO_FUNC_1_FORMAT_1_N_BYTES_PER_SAMPLE_TX
+				* CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_TX;
+		tud_audio_write(&(mic_usb_16b_buffer[0]), buffer_size);
+	}
 }
 
 void usb_headset_tud_audio_tx_done_post_load_handler(uint8_t rhport,
 		uint16_t n_bytes_copied, uint8_t itf, uint8_t ep_in,
 		uint8_t cur_alt_setting) {
 
+	// Read data from microphone
+	uint32_t buffer_size_read = current_settings.samples_in_i2s_frame_min * 2;
+	int num_words_read = mic_machine_i2s_read_stream(&mic_i2s_read_buffer[0],
+			buffer_size_read);
+	int num_of_frames_read = num_words_read / 2;
+
+	if (CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_TX == 2) {
+		if (num_of_frames_read >= current_settings.samples_in_i2s_frame_min) {
+
+			for (uint32_t i = 0; i < num_of_frames_read; i++) {
+				if (current_settings.resolution == 24) {
+					int32_t left_24b = (int32_t) mic_i2s_read_buffer[i].left
+							<< MIC_FORMAT_24B_TO_24B_SHIFT_VAL; // Magic number
+					int32_t right_24b = (int32_t) mic_i2s_read_buffer[i].right
+							<< MIC_FORMAT_24B_TO_24B_SHIFT_VAL; // Magic number
+
+					mic_usb_24b_buffer[i * 2] = left_24b; // TODO: check this value
+					mic_usb_24b_buffer[i * 2 + 1] = right_24b; // TODO: check this value
+				} else {
+					int32_t left_16b = (int32_t) mic_i2s_read_buffer[i].left
+							>> MIC_FORMAT_24B_TO_16B_SHIFT_VAL; // Magic number
+					int32_t right_16b = (int32_t) mic_i2s_read_buffer[i].right
+							>> MIC_FORMAT_24B_TO_16B_SHIFT_VAL; // Magic number
+
+					mic_usb_16b_buffer[i * 2] = left_16b; // TODO: check this value
+					mic_usb_16b_buffer[i * 2 + 1] = right_16b; // TODO: check this value
+				}
+			}
+		}
+	} else { //CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_TX is 1
+		if (num_of_frames_read >= current_settings.samples_in_i2s_frame_min) {
+			for (uint32_t i = 0; i < num_of_frames_read; i++) {
+				if (current_settings.resolution == 24) {
+					int32_t mono_24b = (int32_t) mic_i2s_read_buffer[i].left
+							<< MIC_FORMAT_24B_TO_24B_SHIFT_VAL; // Magic number
+
+					mic_usb_24b_buffer[i] = mono_24b; // TODO: check this value
+				} else {
+					int32_t mono_24b = (int32_t) mic_i2s_read_buffer[i].left
+							>> MIC_FORMAT_24B_TO_16B_SHIFT_VAL; // Magic number
+
+					mic_usb_16b_buffer[i] = mono_24b; // TODO: check this value
+				}
+			}
+		}
+	}
 }
 
 int32_t usb_to_i2s_32b_sample_convert(int32_t sample, uint16_t volume_db) {
@@ -583,7 +748,7 @@ void led_blinking_task(void) {
 	led_state = 1 - led_state;
 }
 
-int machine_i2s_write_stream(uint32_t *buf_in, size_t size) {
+int spk_machine_i2s_write_stream(uint32_t *buf_in, size_t size) {
 	if ((size % 2) != 0) {
 		return -2;
 	}
@@ -600,7 +765,7 @@ int machine_i2s_write_stream(uint32_t *buf_in, size_t size) {
 
 	while (a_index < size) {
 		// copy a byte to the ringbuf when space becomes available
-		while (ringbuf_push(&ring_buffer, buf_in[a_index]) == false) {
+		while (ringbuf_push(&spk_ring_buffer, buf_in[a_index]) == false) {
 			;
 		}
 		a_index++;
@@ -609,32 +774,78 @@ int machine_i2s_write_stream(uint32_t *buf_in, size_t size) {
 	return a_index;
 }
 
+int mic_machine_i2s_read_stream(uint32_t *buf_in, size_t size) {
+	if ((size % 2) != 0) {
+		return -2;
+	}
+
+	if (size == 0) {
+		return 0;
+	}
+
+	uint32_t available_data_words = ringbuf_available_data(&mic_ring_buffer);
+
+	if (available_data_words >= size) {
+		for (uint32_t i = 0; i < size; i++) {
+			ringbuf_pop_half_word_swap(&mic_ring_buffer, &buf_in[i]);
+		}
+		return size;
+	} else {
+		// underflow.  clear buffer to transmit "silence" on the I2S bus
+		memset(buf_in, 0, size*sizeof(uint32_t));
+		return size;
+	}
+}
+
 void HAL_I2S_TxHalfCpltCallback(I2S_HandleTypeDef *hi2s) {
-	feed_dma(&spk_i2s_buf[0], current_settings.samples_in_i2s_frame_max);
+	feed_spk_dma(&spk_i2s_buf[0], current_settings.samples_in_i2s_frame_max);
 }
 
 void HAL_I2S_TxCpltCallback(I2S_HandleTypeDef *hi2s) {
-	feed_dma(&spk_i2s_buf[current_settings.samples_in_i2s_frame_max],
+	feed_spk_dma(&spk_i2s_buf[current_settings.samples_in_i2s_frame_max],
 			current_settings.samples_in_i2s_frame_max);
 }
 
-uint32_t feed_dma(uint32_t *dma_buffer_p,
+void HAL_I2S_RxHalfCpltCallback(I2S_HandleTypeDef *hi2s) {
+	empty_mic_dma(&mic_i2s_buf[0], current_settings.samples_in_i2s_frame_max);
+}
+
+void HAL_I2S_RxCpltCallback(I2S_HandleTypeDef *hi2s) {
+	empty_mic_dma(&mic_i2s_buf[current_settings.samples_in_i2s_frame_max],
+			current_settings.samples_in_i2s_frame_max);
+}
+
+//void HAL_I2S_ErrorCallback(I2S_HandleTypeDef *hi2s){
+//}
+
+uint32_t feed_spk_dma(uint32_t *dma_buffer_p,
 		uint32_t sizeof_half_dma_buffer_in_words) {
 	// when data exists, copy samples from ring buffer
-	uint32_t available_data_words = ringbuf_available_data(&ring_buffer);
+	uint32_t available_data_words = ringbuf_available_data(&spk_ring_buffer);
 	if (available_data_words > sizeof_half_dma_buffer_in_words) {
 		available_data_words = sizeof_half_dma_buffer_in_words;
 	}
 
 	if (available_data_words >= sizeof_half_dma_buffer_in_words) {
 		for (uint32_t i = 0; i < sizeof_half_dma_buffer_in_words; i++) {
-			ringbuf_pop_half_word_swap(&ring_buffer, &dma_buffer_p[i]);
+			ringbuf_pop_half_word_swap(&spk_ring_buffer, &dma_buffer_p[i]);
 		}
 		return available_data_words;
 	} else {
 		// underflow.  clear buffer to transmit "silence" on the I2S bus
-		memset(dma_buffer_p, 0, sizeof_half_dma_buffer_in_words*4);
+		memset(dma_buffer_p, 0, sizeof_half_dma_buffer_in_words*sizeof(uint32_t));
 		return sizeof_half_dma_buffer_in_words;
+	}
+}
+
+uint32_t empty_mic_dma(uint32_t *dma_buffer_p,
+		uint32_t sizeof_half_dma_buffer_in_words) {
+	// when space exists, copy samples into ring buffer
+	if (ringbuf_available_space(&mic_ring_buffer)
+			>= sizeof_half_dma_buffer_in_words) {
+		for (uint32_t i = 0; i < sizeof_half_dma_buffer_in_words; i++) {
+			ringbuf_push(&mic_ring_buffer, dma_buffer_p[i]);
+		}
 	}
 }
 
