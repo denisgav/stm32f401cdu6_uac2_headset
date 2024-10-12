@@ -7,22 +7,25 @@
 
 // List of supported sample rates
 const uint32_t sample_rates[] = { 48000 }; //{44100, 48000};
-
-uint32_t current_sample_rate = 48000; //44100;
-
 #define N_SAMPLE_RATES  TU_ARRAY_SIZE(sample_rates)
-
-// Audio controls
-// Current states
-int8_t mute[CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_RX + 1];  // +1 for master channel 0
-int16_t volume[CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_RX + 1]; // +1 for master channel 0
 
 // Resolution per format
 const uint8_t resolutions_per_format[CFG_TUD_AUDIO_FUNC_1_N_FORMATS] = {
 CFG_TUD_AUDIO_FUNC_1_FORMAT_1_RESOLUTION_RX,
 CFG_TUD_AUDIO_FUNC_1_FORMAT_2_RESOLUTION_RX };
+
+// Audio controls
+// Current states
+int8_t spk_mute[CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_RX + 1];  // +1 for master channel 0
+int16_t spk_volume[CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_RX + 1]; // +1 for master channel 0
+
+int8_t mic_mute[CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_TX + 1];  // +1 for master channel 0
+int16_t mic_volume[CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_TX + 1]; // +1 for master channel 0
+
 // Current resolution, update on format change
 uint8_t current_resolution;
+uint32_t spk_current_sample_rate = 48000; //44100;
+uint32_t mic_current_sample_rate = 48000; //44100;
 
 void usb_headset_init() {
 	board_init();
@@ -36,8 +39,10 @@ void usb_headset_init() {
 
 	for (int ch_idx = 0; ch_idx < CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_RX + 1;
 			ch_idx++) {
-		mute[ch_idx] = 0;
-		volume[ch_idx] = MAX_VOLUME_ENC;
+		spk_mute[ch_idx] = 0;
+		spk_volume[ch_idx] = MAX_VOLUME_ENC;
+		mic_mute[ch_idx] = 0;
+		mic_volume[ch_idx] = MAX_VOLUME_ENC;
 	}
 
 	TU_LOG1("Headset running\r\n");
@@ -106,14 +111,14 @@ void usb_headset_set_tud_audio_tx_done_post_load_set_handler(
 // Invoked when device is mounted
 void tud_mount_cb(void) {
 	if (usb_headset_current_status_set_handler) {
-		usb_headset_current_status_set_handler(BLINK_MOUNTED);
+		usb_headset_current_status_set_handler(0, BLINK_MOUNTED);
 	}
 }
 
 // Invoked when device is unmounted
 void tud_umount_cb(void) {
 	if (usb_headset_current_status_set_handler) {
-		usb_headset_current_status_set_handler(BLINK_NOT_MOUNTED);
+		usb_headset_current_status_set_handler(0, BLINK_NOT_MOUNTED);
 	}
 }
 
@@ -123,14 +128,14 @@ void tud_umount_cb(void) {
 void tud_suspend_cb(bool remote_wakeup_en) {
 	(void) remote_wakeup_en;
 	if (usb_headset_current_status_set_handler) {
-		usb_headset_current_status_set_handler(BLINK_SUSPENDED);
+		usb_headset_current_status_set_handler(0, BLINK_SUSPENDED);
 	}
 }
 
 // Invoked when usb bus is resumed
 void tud_resume_cb(void) {
 	if (usb_headset_current_status_set_handler) {
-		usb_headset_current_status_set_handler(
+		usb_headset_current_status_set_handler(0,
 				tud_mounted() ? BLINK_MOUNTED : BLINK_NOT_MOUNTED);
 	}
 }
@@ -145,7 +150,7 @@ static bool tud_audio_clock_get_request(uint8_t rhport,
 			TU_LOG1("Clock get current freq %" PRIu32 "\r\n", current_sample_rate);
 
 			audio_control_cur_4_t curf = { (int32_t) tu_htole32(
-					current_sample_rate) };
+					spk_current_sample_rate) };
 			return tud_audio_buffer_and_schedule_control_xfer(rhport,
 					(tusb_control_request_t const*) request, &curf,
 					sizeof(curf));
@@ -187,11 +192,11 @@ static bool tud_audio_clock_set_request(uint8_t rhport,
 	if (request->bControlSelector == AUDIO_CS_CTRL_SAM_FREQ) {
 		TU_VERIFY(request->wLength == sizeof(audio_control_cur_4_t));
 
-		current_sample_rate =
+		spk_current_sample_rate =
 				(uint32_t) ((audio_control_cur_4_t const*) buf)->bCur;
 
 		if (usb_headset_current_sample_rate_set_handler) {
-			usb_headset_current_sample_rate_set_handler(current_sample_rate);
+			usb_headset_current_sample_rate_set_handler(spk_current_sample_rate);
 		}
 
 		TU_LOG1("Clock set current freq: %" PRIu32 "\r\n", current_sample_rate);
@@ -211,7 +216,7 @@ static bool tud_audio_feature_unit_get_request(uint8_t rhport,
 
 	if (request->bControlSelector == AUDIO_FU_CTRL_MUTE
 			&& request->bRequest == AUDIO_CS_REQ_CUR) {
-		audio_control_cur_1_t mute1 = { .bCur = mute[request->bChannelNumber] };
+		audio_control_cur_1_t mute1 = { .bCur = spk_mute[request->bChannelNumber] };
 		TU_LOG1("Get channel %u mute %d\r\n", request->bChannelNumber, mute1.bCur);
 		return tud_audio_buffer_and_schedule_control_xfer(rhport,
 				(tusb_control_request_t const*) request, &mute1, sizeof(mute1));
@@ -228,7 +233,7 @@ static bool tud_audio_feature_unit_get_request(uint8_t rhport,
 					sizeof(range_vol));
 		} else if (request->bRequest == AUDIO_CS_REQ_CUR) {
 			audio_control_cur_2_t cur_vol = { .bCur = tu_htole16(
-					volume[request->bChannelNumber]) };
+					spk_volume[request->bChannelNumber]) };
 			TU_LOG1("Get channel %u volume %d dB\r\n", request->bChannelNumber, cur_vol.bCur / 256);
 			return tud_audio_buffer_and_schedule_control_xfer(rhport,
 					(tusb_control_request_t const*) request, &cur_vol,
@@ -251,12 +256,12 @@ static bool tud_audio_feature_unit_set_request(uint8_t rhport,
 	if (request->bControlSelector == AUDIO_FU_CTRL_MUTE) {
 		TU_VERIFY(request->wLength == sizeof(audio_control_cur_1_t));
 
-		mute[request->bChannelNumber] =
+		spk_mute[request->bChannelNumber] =
 				((audio_control_cur_1_t const*) buf)->bCur;
 
 		if (usb_headset_mute_set_handler) {
 			usb_headset_mute_set_handler(request->bChannelNumber,
-					mute[request->bChannelNumber]);
+					spk_mute[request->bChannelNumber]);
 		}
 
 		TU_LOG1("Set channel %d Mute: %d\r\n", request->bChannelNumber, mute[request->bChannelNumber]);
@@ -265,12 +270,12 @@ static bool tud_audio_feature_unit_set_request(uint8_t rhport,
 	} else if (request->bControlSelector == AUDIO_FU_CTRL_VOLUME) {
 		TU_VERIFY(request->wLength == sizeof(audio_control_cur_2_t));
 
-		volume[request->bChannelNumber] =
+		spk_volume[request->bChannelNumber] =
 				((audio_control_cur_2_t const*) buf)->bCur;
 
 		if (usb_headset_volume_set_handler) {
 			usb_headset_volume_set_handler(request->bChannelNumber,
-					volume[request->bChannelNumber]);
+					spk_volume[request->bChannelNumber]);
 		}
 
 		TU_LOG1("Set channel %d volume: %d dB\r\n", request->bChannelNumber, volume[request->bChannelNumber] / 256);
@@ -313,7 +318,9 @@ bool tud_audio_set_req_entity_cb(uint8_t rhport,
 	if (request->bEntityID == UAC2_ENTITY_SPK_FEATURE_UNIT)
 		return tud_audio_feature_unit_set_request(rhport, request, buf);
 	if (request->bEntityID == UAC2_ENTITY_CLOCK)
-		return tud_audio_clock_set_request(rhport, request, buf);TU_LOG1("Set request not handled, entity = %d, selector = %d, request = %d\r\n",
+		return tud_audio_clock_set_request(rhport, request, buf);
+
+	TU_LOG1("Set request not handled, entity = %d, selector = %d, request = %d\r\n",
 			request->bEntityID, request->bControlSelector, request->bRequest);
 
 	return false;
@@ -326,10 +333,11 @@ bool tud_audio_set_itf_close_EP_cb(uint8_t rhport,
 	uint8_t const itf = tu_u16_low(tu_le16toh(p_request->wIndex));
 	uint8_t const alt = tu_u16_low(tu_le16toh(p_request->wValue));
 
-	if (ITF_NUM_AUDIO_STREAMING_SPK == itf && alt == 0)
+	if (alt == 0){
 		if (usb_headset_current_status_set_handler) {
-			usb_headset_current_status_set_handler(BLINK_MOUNTED);
+			usb_headset_current_status_set_handler(itf, BLINK_MOUNTED);
 		}
+	}
 
 	return true;
 }
@@ -341,16 +349,17 @@ bool tud_audio_set_itf_cb(uint8_t rhport,
 	uint8_t const alt = tu_u16_low(tu_le16toh(p_request->wValue));
 
 	TU_LOG2("Set interface %d alt %d\r\n", itf, alt);
-	if (ITF_NUM_AUDIO_STREAMING_SPK == itf && alt != 0)
+	if (alt != 0){
 		if (usb_headset_current_status_set_handler) {
-			usb_headset_current_status_set_handler(BLINK_STREAMING);
+			usb_headset_current_status_set_handler(itf, BLINK_STREAMING);
 		}
+	}
 
 	// Clear buffer when streaming format is changed
 	if (alt != 0) {
 		current_resolution = resolutions_per_format[alt - 1];
 		if (usb_headset_current_resolution_set_handler) {
-			usb_headset_current_resolution_set_handler(current_resolution);
+			usb_headset_current_resolution_set_handler(itf, current_resolution);
 		}
 	}
 

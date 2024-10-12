@@ -95,8 +95,10 @@ int16_t usb_to_i2s_16b_sample_convert(int16_t sample, uint16_t volume_db);
 void usb_headset_mute_handler(int8_t bChannelNumber, int8_t mute_in);
 void usb_headset_volume_handler(int8_t bChannelNumber, int16_t volume_in);
 void usb_headset_current_sample_rate_handler(uint32_t current_sample_rate_in);
-void usb_headset_current_resolution_handler(uint8_t current_resolution_in);
-void usb_headset_current_status_set_handler(uint32_t blink_interval_ms_in);
+void usb_headset_current_resolution_handler(uint8_t itf,
+		uint8_t current_resolution_in);
+void usb_headset_current_status_set_handler(uint8_t itf,
+		uint32_t blink_interval_ms_in);
 
 void usb_headset_tud_audio_rx_done_pre_read_handler(uint8_t rhport,
 		uint16_t n_bytes_received, uint8_t func_id, uint8_t ep_out,
@@ -146,47 +148,51 @@ static void MX_I2S3_Init(void);
 /* USER CODE END 0 */
 
 /**
-  * @brief  The application entry point.
-  * @retval int
-  */
-int main(void)
-{
+ * @brief  The application entry point.
+ * @retval int
+ */
+int main(void) {
 
-  /* USER CODE BEGIN 1 */
+	/* USER CODE BEGIN 1 */
 
-  /* USER CODE END 1 */
+	/* USER CODE END 1 */
 
-  /* MCU Configuration--------------------------------------------------------*/
+	/* MCU Configuration--------------------------------------------------------*/
 
-  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-  HAL_Init();
+	/* Reset of all peripherals, Initializes the Flash interface and the Systick. */
+	HAL_Init();
 
-  /* USER CODE BEGIN Init */
+	/* USER CODE BEGIN Init */
 
-  /* USER CODE END Init */
+	/* USER CODE END Init */
 
-  /* Configure the system clock */
-  SystemClock_Config();
+	/* Configure the system clock */
+	SystemClock_Config();
 
-  /* Configure the peripherals common clocks */
-  PeriphCommonClock_Config();
+	/* Configure the peripherals common clocks */
+	PeriphCommonClock_Config();
 
-  /* USER CODE BEGIN SysInit */
+	/* USER CODE BEGIN SysInit */
 
-  /* USER CODE END SysInit */
+	/* USER CODE END SysInit */
 
-  /* Initialize all configured peripherals */
-  MX_GPIO_Init();
-  MX_DMA_Init();
-  MX_USB_OTG_FS_PCD_Init();
-  MX_I2S2_Init();
-  MX_I2C1_Init();
-  MX_I2S3_Init();
-  /* USER CODE BEGIN 2 */
+	/* Initialize all configured peripherals */
+	MX_GPIO_Init();
+	MX_DMA_Init();
+	MX_USB_OTG_FS_PCD_Init();
+	MX_I2S2_Init();
+	MX_I2C1_Init();
+	MX_I2S3_Init();
+	/* USER CODE BEGIN 2 */
 
-	current_settings.sample_rate = I2S_SPK_RATE_DEF;
-	current_settings.resolution = CFG_TUD_AUDIO_FUNC_1_FORMAT_1_RESOLUTION_RX;
-	current_settings.blink_interval_ms = BLINK_NOT_MOUNTED;
+	current_settings.spk_sample_rate = I2S_SPK_RATE_DEF;
+	current_settings.spk_resolution =
+	CFG_TUD_AUDIO_FUNC_1_FORMAT_1_RESOLUTION_RX;
+	current_settings.spk_blink_interval_ms = BLINK_NOT_MOUNTED;
+
+	current_settings.mic_resolution =
+	CFG_TUD_AUDIO_FUNC_1_FORMAT_1_RESOLUTION_RX;
+	current_settings.mic_blink_interval_ms = BLINK_NOT_MOUNTED;
 
 	current_settings.status_updated = false;
 
@@ -207,10 +213,10 @@ int main(void)
 			usb_headset_tud_audio_tx_done_post_load_handler);
 
 	for (int i = 0; i < (CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_RX + 1); i++) {
-		current_settings.volume[i] = DEFAULT_VOLUME;
-		current_settings.mute[i] = 0;
-		current_settings.volume_db[i] = vol_to_db_convert_enc(
-				current_settings.mute[i], current_settings.volume[i]);
+		current_settings.spk_volume[i] = DEFAULT_VOLUME;
+		current_settings.spk_mute[i] = 0;
+		current_settings.spk_volume_db[i] = vol_to_db_convert_enc(
+				current_settings.spk_mute[i], current_settings.spk_volume[i]);
 	}
 
 	usb_headset_init();
@@ -221,270 +227,255 @@ int main(void)
 	// Init SSD
 	ssd1306_Init();
 
-  /* USER CODE END 2 */
+	/* USER CODE END 2 */
 
-  /* Infinite loop */
-  /* USER CODE BEGIN WHILE */
+	/* Infinite loop */
+	/* USER CODE BEGIN WHILE */
 	while (1) {
 		usb_headset_task(); // TinyUSB device task
 		led_blinking_task();
 		status_update_task();
-    /* USER CODE END WHILE */
+		/* USER CODE END WHILE */
 
-    /* USER CODE BEGIN 3 */
+		/* USER CODE BEGIN 3 */
 	}
-  /* USER CODE END 3 */
+	/* USER CODE END 3 */
 }
 
 /**
-  * @brief System Clock Configuration
-  * @retval None
-  */
-void SystemClock_Config(void)
-{
-  RCC_OscInitTypeDef RCC_OscInitStruct = {0};
-  RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+ * @brief System Clock Configuration
+ * @retval None
+ */
+void SystemClock_Config(void) {
+	RCC_OscInitTypeDef RCC_OscInitStruct = { 0 };
+	RCC_ClkInitTypeDef RCC_ClkInitStruct = { 0 };
 
-  /** Configure the main internal regulator output voltage
-  */
-  __HAL_RCC_PWR_CLK_ENABLE();
-  __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE2);
+	/** Configure the main internal regulator output voltage
+	 */
+	__HAL_RCC_PWR_CLK_ENABLE();
+	__HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE2);
 
-  /** Initializes the RCC Oscillators according to the specified parameters
-  * in the RCC_OscInitTypeDef structure.
-  */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
-  RCC_OscInitStruct.HSEState = RCC_HSE_ON;
-  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
-  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
-  RCC_OscInitStruct.PLL.PLLM = 25;
-  RCC_OscInitStruct.PLL.PLLN = 336;
-  RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV4;
-  RCC_OscInitStruct.PLL.PLLQ = 7;
-  if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
-  {
-    Error_Handler();
-  }
+	/** Initializes the RCC Oscillators according to the specified parameters
+	 * in the RCC_OscInitTypeDef structure.
+	 */
+	RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
+	RCC_OscInitStruct.HSEState = RCC_HSE_ON;
+	RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+	RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
+	RCC_OscInitStruct.PLL.PLLM = 25;
+	RCC_OscInitStruct.PLL.PLLN = 336;
+	RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV4;
+	RCC_OscInitStruct.PLL.PLLQ = 7;
+	if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK) {
+		Error_Handler();
+	}
 
-  /** Initializes the CPU, AHB and APB buses clocks
-  */
-  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
-                              |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
-  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
-  RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
-  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
-  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
+	/** Initializes the CPU, AHB and APB buses clocks
+	 */
+	RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK
+			| RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2;
+	RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
+	RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
+	RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
+	RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
 
-  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK)
-  {
-    Error_Handler();
-  }
+	if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK) {
+		Error_Handler();
+	}
 }
 
 /**
-  * @brief Peripherals Common Clock Configuration
-  * @retval None
-  */
-void PeriphCommonClock_Config(void)
-{
-  RCC_PeriphCLKInitTypeDef PeriphClkInitStruct = {0};
+ * @brief Peripherals Common Clock Configuration
+ * @retval None
+ */
+void PeriphCommonClock_Config(void) {
+	RCC_PeriphCLKInitTypeDef PeriphClkInitStruct = { 0 };
 
-  /** Initializes the peripherals clock
-  */
-  PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_I2S;
-  PeriphClkInitStruct.PLLI2S.PLLI2SN = 384;
-  PeriphClkInitStruct.PLLI2S.PLLI2SR = 5;
-  if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInitStruct) != HAL_OK)
-  {
-    Error_Handler();
-  }
+	/** Initializes the peripherals clock
+	 */
+	PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_I2S;
+	PeriphClkInitStruct.PLLI2S.PLLI2SN = 384;
+	PeriphClkInitStruct.PLLI2S.PLLI2SR = 5;
+	if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInitStruct) != HAL_OK) {
+		Error_Handler();
+	}
 }
 
 /**
-  * @brief I2C1 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_I2C1_Init(void)
-{
+ * @brief I2C1 Initialization Function
+ * @param None
+ * @retval None
+ */
+static void MX_I2C1_Init(void) {
 
-  /* USER CODE BEGIN I2C1_Init 0 */
+	/* USER CODE BEGIN I2C1_Init 0 */
 
-  /* USER CODE END I2C1_Init 0 */
+	/* USER CODE END I2C1_Init 0 */
 
-  /* USER CODE BEGIN I2C1_Init 1 */
+	/* USER CODE BEGIN I2C1_Init 1 */
 
-  /* USER CODE END I2C1_Init 1 */
-  hi2c1.Instance = I2C1;
-  hi2c1.Init.ClockSpeed = 100000;
-  hi2c1.Init.DutyCycle = I2C_DUTYCYCLE_2;
-  hi2c1.Init.OwnAddress1 = 0;
-  hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
-  hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
-  hi2c1.Init.OwnAddress2 = 0;
-  hi2c1.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
-  hi2c1.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
-  if (HAL_I2C_Init(&hi2c1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN I2C1_Init 2 */
+	/* USER CODE END I2C1_Init 1 */
+	hi2c1.Instance = I2C1;
+	hi2c1.Init.ClockSpeed = 100000;
+	hi2c1.Init.DutyCycle = I2C_DUTYCYCLE_2;
+	hi2c1.Init.OwnAddress1 = 0;
+	hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+	hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+	hi2c1.Init.OwnAddress2 = 0;
+	hi2c1.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+	hi2c1.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+	if (HAL_I2C_Init(&hi2c1) != HAL_OK) {
+		Error_Handler();
+	}
+	/* USER CODE BEGIN I2C1_Init 2 */
 
-  /* USER CODE END I2C1_Init 2 */
+	/* USER CODE END I2C1_Init 2 */
 
 }
 
 /**
-  * @brief I2S2 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_I2S2_Init(void)
-{
+ * @brief I2S2 Initialization Function
+ * @param None
+ * @retval None
+ */
+static void MX_I2S2_Init(void) {
 
-  /* USER CODE BEGIN I2S2_Init 0 */
+	/* USER CODE BEGIN I2S2_Init 0 */
 
-  /* USER CODE END I2S2_Init 0 */
+	/* USER CODE END I2S2_Init 0 */
 
-  /* USER CODE BEGIN I2S2_Init 1 */
+	/* USER CODE BEGIN I2S2_Init 1 */
 
-  /* USER CODE END I2S2_Init 1 */
-  hi2s2.Instance = SPI2;
-  hi2s2.Init.Mode = I2S_MODE_MASTER_TX;
-  hi2s2.Init.Standard = I2S_STANDARD_PHILIPS;
-  hi2s2.Init.DataFormat = I2S_DATAFORMAT_32B;
-  hi2s2.Init.MCLKOutput = I2S_MCLKOUTPUT_DISABLE;
-  hi2s2.Init.AudioFreq = I2S_AUDIOFREQ_48K;
-  hi2s2.Init.CPOL = I2S_CPOL_LOW;
-  hi2s2.Init.ClockSource = I2S_CLOCK_PLL;
-  hi2s2.Init.FullDuplexMode = I2S_FULLDUPLEXMODE_DISABLE;
-  if (HAL_I2S_Init(&hi2s2) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN I2S2_Init 2 */
+	/* USER CODE END I2S2_Init 1 */
+	hi2s2.Instance = SPI2;
+	hi2s2.Init.Mode = I2S_MODE_MASTER_TX;
+	hi2s2.Init.Standard = I2S_STANDARD_PHILIPS;
+	hi2s2.Init.DataFormat = I2S_DATAFORMAT_32B;
+	hi2s2.Init.MCLKOutput = I2S_MCLKOUTPUT_DISABLE;
+	hi2s2.Init.AudioFreq = I2S_AUDIOFREQ_48K;
+	hi2s2.Init.CPOL = I2S_CPOL_LOW;
+	hi2s2.Init.ClockSource = I2S_CLOCK_PLL;
+	hi2s2.Init.FullDuplexMode = I2S_FULLDUPLEXMODE_DISABLE;
+	if (HAL_I2S_Init(&hi2s2) != HAL_OK) {
+		Error_Handler();
+	}
+	/* USER CODE BEGIN I2S2_Init 2 */
 
-  /* USER CODE END I2S2_Init 2 */
+	/* USER CODE END I2S2_Init 2 */
 
 }
 
 /**
-  * @brief I2S3 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_I2S3_Init(void)
-{
+ * @brief I2S3 Initialization Function
+ * @param None
+ * @retval None
+ */
+static void MX_I2S3_Init(void) {
 
-  /* USER CODE BEGIN I2S3_Init 0 */
+	/* USER CODE BEGIN I2S3_Init 0 */
 
-  /* USER CODE END I2S3_Init 0 */
+	/* USER CODE END I2S3_Init 0 */
 
-  /* USER CODE BEGIN I2S3_Init 1 */
+	/* USER CODE BEGIN I2S3_Init 1 */
 
-  /* USER CODE END I2S3_Init 1 */
-  hi2s3.Instance = SPI3;
-  hi2s3.Init.Mode = I2S_MODE_MASTER_RX;
-  hi2s3.Init.Standard = I2S_STANDARD_PHILIPS;
-  hi2s3.Init.DataFormat = I2S_DATAFORMAT_32B;
-  hi2s3.Init.MCLKOutput = I2S_MCLKOUTPUT_DISABLE;
-  hi2s3.Init.AudioFreq = I2S_AUDIOFREQ_48K;
-  hi2s3.Init.CPOL = I2S_CPOL_LOW;
-  hi2s3.Init.ClockSource = I2S_CLOCK_PLL;
-  hi2s3.Init.FullDuplexMode = I2S_FULLDUPLEXMODE_DISABLE;
-  if (HAL_I2S_Init(&hi2s3) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN I2S3_Init 2 */
+	/* USER CODE END I2S3_Init 1 */
+	hi2s3.Instance = SPI3;
+	hi2s3.Init.Mode = I2S_MODE_MASTER_RX;
+	hi2s3.Init.Standard = I2S_STANDARD_PHILIPS;
+	hi2s3.Init.DataFormat = I2S_DATAFORMAT_32B;
+	hi2s3.Init.MCLKOutput = I2S_MCLKOUTPUT_DISABLE;
+	hi2s3.Init.AudioFreq = I2S_AUDIOFREQ_48K;
+	hi2s3.Init.CPOL = I2S_CPOL_LOW;
+	hi2s3.Init.ClockSource = I2S_CLOCK_PLL;
+	hi2s3.Init.FullDuplexMode = I2S_FULLDUPLEXMODE_DISABLE;
+	if (HAL_I2S_Init(&hi2s3) != HAL_OK) {
+		Error_Handler();
+	}
+	/* USER CODE BEGIN I2S3_Init 2 */
 
-  /* USER CODE END I2S3_Init 2 */
+	/* USER CODE END I2S3_Init 2 */
 
 }
 
 /**
-  * @brief USB_OTG_FS Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_USB_OTG_FS_PCD_Init(void)
-{
+ * @brief USB_OTG_FS Initialization Function
+ * @param None
+ * @retval None
+ */
+static void MX_USB_OTG_FS_PCD_Init(void) {
 
-  /* USER CODE BEGIN USB_OTG_FS_Init 0 */
+	/* USER CODE BEGIN USB_OTG_FS_Init 0 */
 
-  /* USER CODE END USB_OTG_FS_Init 0 */
+	/* USER CODE END USB_OTG_FS_Init 0 */
 
-  /* USER CODE BEGIN USB_OTG_FS_Init 1 */
+	/* USER CODE BEGIN USB_OTG_FS_Init 1 */
 
-  /* USER CODE END USB_OTG_FS_Init 1 */
-  hpcd_USB_OTG_FS.Instance = USB_OTG_FS;
-  hpcd_USB_OTG_FS.Init.dev_endpoints = 4;
-  hpcd_USB_OTG_FS.Init.speed = PCD_SPEED_FULL;
-  hpcd_USB_OTG_FS.Init.dma_enable = DISABLE;
-  hpcd_USB_OTG_FS.Init.phy_itface = PCD_PHY_EMBEDDED;
-  hpcd_USB_OTG_FS.Init.Sof_enable = DISABLE;
-  hpcd_USB_OTG_FS.Init.low_power_enable = DISABLE;
-  hpcd_USB_OTG_FS.Init.lpm_enable = DISABLE;
-  hpcd_USB_OTG_FS.Init.vbus_sensing_enable = DISABLE;
-  hpcd_USB_OTG_FS.Init.use_dedicated_ep1 = DISABLE;
-  if (HAL_PCD_Init(&hpcd_USB_OTG_FS) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN USB_OTG_FS_Init 2 */
+	/* USER CODE END USB_OTG_FS_Init 1 */
+	hpcd_USB_OTG_FS.Instance = USB_OTG_FS;
+	hpcd_USB_OTG_FS.Init.dev_endpoints = 4;
+	hpcd_USB_OTG_FS.Init.speed = PCD_SPEED_FULL;
+	hpcd_USB_OTG_FS.Init.dma_enable = DISABLE;
+	hpcd_USB_OTG_FS.Init.phy_itface = PCD_PHY_EMBEDDED;
+	hpcd_USB_OTG_FS.Init.Sof_enable = DISABLE;
+	hpcd_USB_OTG_FS.Init.low_power_enable = DISABLE;
+	hpcd_USB_OTG_FS.Init.lpm_enable = DISABLE;
+	hpcd_USB_OTG_FS.Init.vbus_sensing_enable = DISABLE;
+	hpcd_USB_OTG_FS.Init.use_dedicated_ep1 = DISABLE;
+	if (HAL_PCD_Init(&hpcd_USB_OTG_FS) != HAL_OK) {
+		Error_Handler();
+	}
+	/* USER CODE BEGIN USB_OTG_FS_Init 2 */
 
-  /* USER CODE END USB_OTG_FS_Init 2 */
+	/* USER CODE END USB_OTG_FS_Init 2 */
 
 }
 
 /**
-  * Enable DMA controller clock
-  */
-static void MX_DMA_Init(void)
-{
+ * Enable DMA controller clock
+ */
+static void MX_DMA_Init(void) {
 
-  /* DMA controller clock enable */
-  __HAL_RCC_DMA1_CLK_ENABLE();
+	/* DMA controller clock enable */
+	__HAL_RCC_DMA1_CLK_ENABLE();
 
-  /* DMA interrupt init */
-  /* DMA1_Stream0_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Stream0_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(DMA1_Stream0_IRQn);
-  /* DMA1_Stream4_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Stream4_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(DMA1_Stream4_IRQn);
+	/* DMA interrupt init */
+	/* DMA1_Stream0_IRQn interrupt configuration */
+	HAL_NVIC_SetPriority(DMA1_Stream0_IRQn, 0, 0);
+	HAL_NVIC_EnableIRQ(DMA1_Stream0_IRQn);
+	/* DMA1_Stream4_IRQn interrupt configuration */
+	HAL_NVIC_SetPriority(DMA1_Stream4_IRQn, 0, 0);
+	HAL_NVIC_EnableIRQ(DMA1_Stream4_IRQn);
 
 }
 
 /**
-  * @brief GPIO Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_GPIO_Init(void)
-{
-  GPIO_InitTypeDef GPIO_InitStruct = {0};
-/* USER CODE BEGIN MX_GPIO_Init_1 */
-/* USER CODE END MX_GPIO_Init_1 */
+ * @brief GPIO Initialization Function
+ * @param None
+ * @retval None
+ */
+static void MX_GPIO_Init(void) {
+	GPIO_InitTypeDef GPIO_InitStruct = { 0 };
+	/* USER CODE BEGIN MX_GPIO_Init_1 */
+	/* USER CODE END MX_GPIO_Init_1 */
 
-  /* GPIO Ports Clock Enable */
-  __HAL_RCC_GPIOC_CLK_ENABLE();
-  __HAL_RCC_GPIOH_CLK_ENABLE();
-  __HAL_RCC_GPIOA_CLK_ENABLE();
-  __HAL_RCC_GPIOB_CLK_ENABLE();
+	/* GPIO Ports Clock Enable */
+	__HAL_RCC_GPIOC_CLK_ENABLE();
+	__HAL_RCC_GPIOH_CLK_ENABLE();
+	__HAL_RCC_GPIOA_CLK_ENABLE();
+	__HAL_RCC_GPIOB_CLK_ENABLE();
 
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(ONBOARD_LED_GPIO_Port, ONBOARD_LED_Pin, GPIO_PIN_RESET);
+	/*Configure GPIO pin Output Level */
+	HAL_GPIO_WritePin(ONBOARD_LED_GPIO_Port, ONBOARD_LED_Pin, GPIO_PIN_RESET);
 
-  /*Configure GPIO pin : ONBOARD_LED_Pin */
-  GPIO_InitStruct.Pin = ONBOARD_LED_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(ONBOARD_LED_GPIO_Port, &GPIO_InitStruct);
+	/*Configure GPIO pin : ONBOARD_LED_Pin */
+	GPIO_InitStruct.Pin = ONBOARD_LED_Pin;
+	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+	GPIO_InitStruct.Pull = GPIO_NOPULL;
+	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+	HAL_GPIO_Init(ONBOARD_LED_GPIO_Port, &GPIO_InitStruct);
 
-/* USER CODE BEGIN MX_GPIO_Init_2 */
-/* USER CODE END MX_GPIO_Init_2 */
+	/* USER CODE BEGIN MX_GPIO_Init_2 */
+	/* USER CODE END MX_GPIO_Init_2 */
 }
 
 /* USER CODE BEGIN 4 */
@@ -513,10 +504,10 @@ void refresh_i2s_connections(void) {
 		free(spk_ring_buffer_storage);
 	}
 
-	current_settings.samples_in_i2s_frame_min = (current_settings.sample_rate)
-			/ 1000;
-	current_settings.samples_in_i2s_frame_max = (current_settings.sample_rate
-			+ 999) / 1000;
+	current_settings.samples_in_i2s_frame_min =
+			(current_settings.spk_sample_rate) / 1000;
+	current_settings.samples_in_i2s_frame_max =
+			(current_settings.spk_sample_rate + 999) / 1000;
 
 	// Ring buffer contains 2 ms data
 	spk_ring_buffer_storage = m_new(uint32_t,
@@ -534,8 +525,6 @@ void refresh_i2s_connections(void) {
 	memset(mic_i2s_buf, 0x0, sizeof(mic_i2s_buf));
 	memset(mic_usb_24b_buffer, 0x0, sizeof(mic_usb_24b_buffer));
 	memset(mic_usb_16b_buffer, 0x0, sizeof(mic_usb_16b_buffer));
-
-
 
 	uint16_t num_of_samples_in_buffer =
 			current_settings.samples_in_i2s_frame_max * 2;
@@ -555,46 +544,55 @@ void refresh_i2s_connections(void) {
 }
 
 void usb_headset_mute_handler(int8_t bChannelNumber, int8_t mute_in) {
-	current_settings.mute[bChannelNumber] = mute_in;
-	current_settings.volume_db[bChannelNumber] = vol_to_db_convert_enc(
-			current_settings.mute[bChannelNumber],
-			current_settings.volume[bChannelNumber]);
+	current_settings.spk_mute[bChannelNumber] = mute_in;
+	current_settings.spk_volume_db[bChannelNumber] = vol_to_db_convert_enc(
+			current_settings.spk_mute[bChannelNumber],
+			current_settings.spk_volume[bChannelNumber]);
 	current_settings.status_updated = true;
 }
 
 void usb_headset_volume_handler(int8_t bChannelNumber, int16_t volume_in) {
-	current_settings.volume[bChannelNumber] = volume_in;
-	current_settings.volume_db[bChannelNumber] = vol_to_db_convert_enc(
-			current_settings.mute[bChannelNumber],
-			current_settings.volume[bChannelNumber]);
+	current_settings.spk_volume[bChannelNumber] = volume_in;
+	current_settings.spk_volume_db[bChannelNumber] = vol_to_db_convert_enc(
+			current_settings.spk_mute[bChannelNumber],
+			current_settings.spk_volume[bChannelNumber]);
 	current_settings.status_updated = true;
 }
 
 void usb_headset_current_sample_rate_handler(uint32_t current_sample_rate_in) {
-	current_settings.sample_rate = current_sample_rate_in;
+	current_settings.spk_sample_rate = current_sample_rate_in;
 	refresh_i2s_connections();
 	current_settings.status_updated = true;
 }
 
-void usb_headset_current_resolution_handler(uint8_t current_resolution_in) {
-	current_settings.resolution = current_resolution_in;
+void usb_headset_current_resolution_handler(uint8_t itf,
+		uint8_t current_resolution_in) {
+	if ((itf == 0) || (itf == ITF_NUM_AUDIO_STREAMING_SPK))
+		current_settings.spk_resolution = current_resolution_in;
+	if ((itf == 0) || (itf == ITF_NUM_AUDIO_STREAMING_MIC))
+		current_settings.mic_resolution = current_resolution_in;
+
 	refresh_i2s_connections();
 	current_settings.status_updated = true;
 }
 
-void usb_headset_current_status_set_handler(uint32_t blink_interval_ms_in) {
-	current_settings.blink_interval_ms = blink_interval_ms_in;
+void usb_headset_current_status_set_handler(uint8_t itf,
+		uint32_t blink_interval_ms_in) {
+	if ((itf == 0) || (itf == ITF_NUM_AUDIO_STREAMING_SPK))
+		current_settings.spk_blink_interval_ms = blink_interval_ms_in;
+	if ((itf == 0) || (itf == ITF_NUM_AUDIO_STREAMING_MIC))
+		current_settings.mic_blink_interval_ms = blink_interval_ms_in;
 	current_settings.status_updated = true;
 }
 
 void usb_headset_tud_audio_rx_done_pre_read_handler(uint8_t rhport,
 		uint16_t n_bytes_received, uint8_t func_id, uint8_t ep_out,
 		uint8_t cur_alt_setting) {
-	uint16_t volume_db_master = current_settings.volume_db[0];
-	uint16_t volume_db_left = current_settings.volume_db[1];
-	uint16_t volume_db_right = current_settings.volume_db[2];
+	uint16_t volume_db_master = current_settings.spk_volume_db[0];
+	uint16_t volume_db_left = current_settings.spk_volume_db[1];
+	uint16_t volume_db_right = current_settings.spk_volume_db[2];
 
-	if (current_settings.blink_interval_ms == BLINK_STREAMING) {
+	if (current_settings.spk_blink_interval_ms == BLINK_STREAMING) {
 		// Speaker data size received in the last frame
 		uint16_t usb_spk_data_size = tud_audio_n_read(func_id, spk_usb_read_buf,
 				n_bytes_received);
@@ -602,7 +600,7 @@ void usb_headset_tud_audio_rx_done_pre_read_handler(uint8_t rhport,
 		//		n_bytes_received);
 		uint16_t usb_sample_count = 0;
 
-		if (current_settings.resolution == 16) {
+		if (current_settings.spk_resolution == 16) {
 			int16_t *in = (int16_t*) spk_usb_read_buf;
 			usb_sample_count = usb_spk_data_size / 4; // 4 bytes per sample 2b left, 2b right
 
@@ -625,7 +623,7 @@ void usb_headset_tud_audio_rx_done_pre_read_handler(uint8_t rhport,
 			spk_machine_i2s_write_stream(&spk_32b_i2s_buffer[0],
 					usb_sample_count * 2);
 			//}
-		} else if (current_settings.resolution == 24) {
+		} else if (current_settings.spk_resolution == 24) {
 			int32_t *in = (int32_t*) spk_usb_read_buf;
 			usb_sample_count = usb_spk_data_size / 8; // 8 bytes per sample 4b left, 4b right
 
@@ -651,7 +649,7 @@ void usb_headset_tud_audio_rx_done_pre_read_handler(uint8_t rhport,
 
 void usb_headset_tud_audio_tx_done_pre_load_handler(uint8_t rhport, uint8_t itf,
 		uint8_t ep_in, uint8_t cur_alt_setting) {
-	if (current_settings.resolution == 24) {
+	if (current_settings.mic_resolution == 24) {
 		uint32_t buffer_size = current_settings.samples_in_i2s_frame_min
 				* CFG_TUD_AUDIO_FUNC_1_FORMAT_2_N_BYTES_PER_SAMPLE_TX
 				* CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_TX;
@@ -678,7 +676,7 @@ void usb_headset_tud_audio_tx_done_post_load_handler(uint8_t rhport,
 		if (num_of_frames_read >= current_settings.samples_in_i2s_frame_min) {
 
 			for (uint32_t i = 0; i < num_of_frames_read; i++) {
-				if (current_settings.resolution == 24) {
+				if (current_settings.mic_resolution == 24) {
 					int32_t left_24b = (int32_t) mic_i2s_read_buffer[i].left
 							<< MIC_FORMAT_24B_TO_24B_SHIFT_VAL; // Magic number
 					int32_t right_24b = (int32_t) mic_i2s_read_buffer[i].right
@@ -700,7 +698,7 @@ void usb_headset_tud_audio_tx_done_post_load_handler(uint8_t rhport,
 	} else { //CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_TX is 1
 		if (num_of_frames_read >= current_settings.samples_in_i2s_frame_min) {
 			for (uint32_t i = 0; i < num_of_frames_read; i++) {
-				if (current_settings.resolution == 24) {
+				if (current_settings.mic_resolution == 24) {
 					int32_t mono_24b = (int32_t) mic_i2s_read_buffer[i].left
 							<< MIC_FORMAT_24B_TO_24B_SHIFT_VAL; // Magic number
 
@@ -740,9 +738,9 @@ void led_blinking_task(void) {
 	uint32_t cur_time_ms = board_millis();
 
 	// Blink every interval ms
-	if (cur_time_ms - start_ms < current_settings.blink_interval_ms)
+	if (cur_time_ms - start_ms < current_settings.spk_blink_interval_ms)
 		return;
-	start_ms += current_settings.blink_interval_ms;
+	start_ms += current_settings.spk_blink_interval_ms;
 
 	board_led_write(led_state);
 	led_state = 1 - led_state;
@@ -792,7 +790,7 @@ int mic_machine_i2s_read_stream(uint32_t *buf_in, size_t size) {
 		return size;
 	} else {
 		// underflow.  clear buffer to transmit "silence" on the I2S bus
-		memset(buf_in, 0, size*sizeof(uint32_t));
+		memset(buf_in, 0, size * sizeof(uint32_t));
 		return size;
 	}
 }
@@ -833,7 +831,8 @@ uint32_t feed_spk_dma(uint32_t *dma_buffer_p,
 		return available_data_words;
 	} else {
 		// underflow.  clear buffer to transmit "silence" on the I2S bus
-		memset(dma_buffer_p, 0, sizeof_half_dma_buffer_in_words*sizeof(uint32_t));
+		memset(dma_buffer_p, 0,
+				sizeof_half_dma_buffer_in_words * sizeof(uint32_t));
 		return sizeof_half_dma_buffer_in_words;
 	}
 }
@@ -870,94 +869,147 @@ void status_update_task(void) {
 }
 
 void display_ssd1306_info(void) {
+	char fmt_tmp_str[20] = "";
+
 	ssd1306_Fill(Black);
 
-	switch (current_settings.blink_interval_ms) {
+	switch (current_settings.spk_blink_interval_ms) {
 	case BLINK_NOT_MOUNTED: {
 		ssd1306_SetCursor(4, 0);
-		ssd1306_WriteString("Speaker", Font_6x8, White);
-		ssd1306_SetCursor(4, 16);
-		ssd1306_WriteString("not mounted", Font_6x8, White);
+		ssd1306_WriteString("Spk not mounted", Font_6x8, White);
 		break;
 	}
 	case BLINK_SUSPENDED: {
 		ssd1306_SetCursor(4, 0);
-		ssd1306_WriteString("Speaker", Font_6x8, White);
-		ssd1306_SetCursor(4, 16);
-		ssd1306_WriteString("suspended", Font_6x8, White);
+		ssd1306_WriteString("Spk suspended", Font_6x8, White);
 		break;
 	}
 	case BLINK_MOUNTED: {
 		ssd1306_SetCursor(4, 0);
-		ssd1306_WriteString("Speaker", Font_6x8, White);
-		ssd1306_SetCursor(4, 16);
-		ssd1306_WriteString("mounted", Font_6x8, White);
+		ssd1306_WriteString("Spk mounted", Font_6x8, White);
 		break;
 	}
 	case BLINK_STREAMING: {
-		char format_str[20] = "Fmt:";
-		char format_tmp_str[20] = "";
+		char spk_streaming_str[20] = "Spk stream: ";
+		memset(fmt_tmp_str, 0x0, sizeof(fmt_tmp_str));
 
-		itoa((current_settings.sample_rate / 1000), format_tmp_str, 10);
-		strcat(format_str, format_tmp_str);
-		strcat(format_str, " kHz, ");
-
-		itoa(current_settings.resolution, format_tmp_str, 10);
-		strcat(format_str, format_tmp_str);
-		strcat(format_str, " bit");
-
-		char vol_str[20] = "Vol M:";
-		char vol_tmp_str[20] = "";
-
-		itoa((current_settings.volume[0] >> ENC_NUM_OF_FP_BITS), vol_tmp_str,
-				10);
-		strcat(vol_str, vol_tmp_str);
-
-		strcat(vol_str, "L:");
-		itoa((current_settings.volume[1] >> ENC_NUM_OF_FP_BITS), vol_tmp_str,
-				10);
-		strcat(vol_str, vol_tmp_str);
-
-		strcat(vol_str, "R:");
-		itoa((current_settings.volume[2] >> ENC_NUM_OF_FP_BITS), vol_tmp_str,
-				10);
-		strcat(vol_str, vol_tmp_str);
-
-		char mute_str[20] = "Mute M:";
-		strcat(mute_str, (current_settings.mute[0] ? "T" : "F"));
-
-		strcat(mute_str, "L:");
-		strcat(mute_str, (current_settings.mute[1] ? "T" : "F"));
-
-		strcat(mute_str, "R:");
-		strcat(mute_str, (current_settings.mute[2] ? "T" : "F"));
+		itoa(current_settings.spk_resolution, fmt_tmp_str, 10);
+		strcat(spk_streaming_str, fmt_tmp_str);
+		strcat(spk_streaming_str, " bit");
 
 		ssd1306_SetCursor(4, 0);
-		ssd1306_WriteString(format_str, Font_6x8, White);
-		ssd1306_SetCursor(4, 12);
-		ssd1306_WriteString(vol_str, Font_6x8, White);
-		ssd1306_SetCursor(4, 24);
-		ssd1306_WriteString(mute_str, Font_6x8, White);
+		ssd1306_WriteString(spk_streaming_str, Font_6x8, White);
+		break;
+	}
+	default: {
+		ssd1306_SetCursor(4, 0);
+		ssd1306_WriteString("Spk unknown", Font_6x8, White);
+		break;
 	}
 	}
 
+	switch (current_settings.mic_blink_interval_ms) {
+	case BLINK_NOT_MOUNTED: {
+		ssd1306_SetCursor(4, 8);
+		ssd1306_WriteString("Mic not mounted", Font_6x8, White);
+		break;
+	}
+	case BLINK_SUSPENDED: {
+		ssd1306_SetCursor(4, 8);
+		ssd1306_WriteString("Mic suspended", Font_6x8, White);
+		break;
+	}
+	case BLINK_MOUNTED: {
+		ssd1306_SetCursor(4, 8);
+		ssd1306_WriteString("Mic mounted", Font_6x8, White);
+		break;
+	}
+	case BLINK_STREAMING: {
+		char mic_streaming_str[20] = "Mic stream: ";
+		memset(fmt_tmp_str, 0x0, sizeof(fmt_tmp_str));
+
+		itoa(current_settings.mic_resolution, fmt_tmp_str, 10);
+		strcat(mic_streaming_str, fmt_tmp_str);
+		strcat(mic_streaming_str, " bit");
+
+		ssd1306_SetCursor(4, 8);
+		ssd1306_WriteString(mic_streaming_str, Font_6x8, White);
+		break;
+	}
+	default: {
+		ssd1306_SetCursor(4, 8);
+		ssd1306_WriteString("Mic unknown", Font_6x8, White);
+		break;
+	}
+	}
+
+	{
+		char freq_str[20] = "Freq: ";
+
+		memset(fmt_tmp_str, 0x0, sizeof(fmt_tmp_str));
+
+		itoa((current_settings.spk_sample_rate), fmt_tmp_str, 10);
+		strcat(freq_str, fmt_tmp_str);
+		strcat(freq_str, " Hz");
+
+		ssd1306_SetCursor(4, 16);
+		ssd1306_WriteString(freq_str, Font_6x8, White);
+
+	}
+
+	{
+		char vol_m_str[20] = "Vol M:";
+		char vol_l_str[20] = "Vol L:";
+		char vol_r_str[20] = "Vol R:";
+
+		memset(fmt_tmp_str, 0x0, sizeof(fmt_tmp_str));
+		itoa((current_settings.spk_volume[0] >> ENC_NUM_OF_FP_BITS),
+				fmt_tmp_str, 10);
+		strcat(vol_m_str, fmt_tmp_str);
+
+		strcat(vol_m_str, " Mute: ");
+		strcat(vol_m_str, (current_settings.spk_mute[0] ? "T" : "F"));
+
+
+		memset(fmt_tmp_str, 0x0, sizeof(fmt_tmp_str));
+		itoa((current_settings.spk_volume[1] >> ENC_NUM_OF_FP_BITS),
+				fmt_tmp_str, 10);
+		strcat(vol_l_str, fmt_tmp_str);
+
+		strcat(vol_l_str, " Mute: ");
+		strcat(vol_l_str, (current_settings.spk_mute[1] ? "T" : "F"));
+
+		memset(fmt_tmp_str, 0x0, sizeof(fmt_tmp_str));
+		itoa((current_settings.spk_volume[2] >> ENC_NUM_OF_FP_BITS),
+				fmt_tmp_str, 10);
+		strcat(vol_r_str, fmt_tmp_str);
+
+		strcat(vol_r_str, " Mute: ");
+		strcat(vol_r_str, (current_settings.spk_mute[2] ? "T" : "F"));
+
+		ssd1306_SetCursor(4, 24);
+		ssd1306_WriteString(vol_m_str, Font_6x8, White);
+		ssd1306_SetCursor(4, 32);
+		ssd1306_WriteString(vol_l_str, Font_6x8, White);
+		ssd1306_SetCursor(4, 40);
+		ssd1306_WriteString(vol_r_str, Font_6x8, White);
+	}
 	ssd1306_UpdateScreen();
 }
 
 /* USER CODE END 4 */
 
 /**
-  * @brief  This function is executed in case of error occurrence.
-  * @retval None
-  */
-void Error_Handler(void)
-{
-  /* USER CODE BEGIN Error_Handler_Debug */
+ * @brief  This function is executed in case of error occurrence.
+ * @retval None
+ */
+void Error_Handler(void) {
+	/* USER CODE BEGIN Error_Handler_Debug */
 	/* User can add his own implementation to report the HAL error return state */
 	__disable_irq();
 	while (1) {
 	}
-  /* USER CODE END Error_Handler_Debug */
+	/* USER CODE END Error_Handler_Debug */
 }
 
 #ifdef  USE_FULL_ASSERT
