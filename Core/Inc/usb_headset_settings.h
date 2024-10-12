@@ -15,6 +15,7 @@ typedef struct _usb_headset_settings_t {
 	int8_t spk_mute[CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_RX + 1]; // +1 for master channel 0
 	int16_t spk_volume[CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_RX + 1]; // +1 for master channel 0
 	uint16_t spk_volume_db[CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_RX + 1]; // +1 for master channel 0
+	uint32_t spk_volume_mul_db[CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_RX];
 
 	uint32_t spk_sample_rate;
 	uint8_t spk_resolution;

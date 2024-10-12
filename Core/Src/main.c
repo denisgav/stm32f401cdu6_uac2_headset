@@ -89,8 +89,8 @@ void led_blinking_task(void);
 
 void refresh_i2s_connections(void);
 
-int32_t usb_to_i2s_32b_sample_convert(int32_t sample, uint16_t volume_db);
-int16_t usb_to_i2s_16b_sample_convert(int16_t sample, uint16_t volume_db);
+int32_t usb_to_i2s_32b_sample_convert(int32_t sample, uint32_t volume_db);
+int32_t usb_to_i2s_16b_sample_convert(int32_t sample, uint32_t volume_db);
 
 void usb_headset_mute_handler(int8_t bChannelNumber, int8_t mute_in);
 void usb_headset_volume_handler(int8_t bChannelNumber, int16_t volume_in);
@@ -548,6 +548,12 @@ void usb_headset_mute_handler(int8_t bChannelNumber, int8_t mute_in) {
 	current_settings.spk_volume_db[bChannelNumber] = vol_to_db_convert_enc(
 			current_settings.spk_mute[bChannelNumber],
 			current_settings.spk_volume[bChannelNumber]);
+
+	current_settings.spk_volume_mul_db[0] = current_settings.spk_volume_db[0]
+			* current_settings.spk_volume_db[1]; // Left ch volume
+	current_settings.spk_volume_mul_db[1] = current_settings.spk_volume_db[0]
+			* current_settings.spk_volume_db[2]; // Right ch volume
+
 	current_settings.status_updated = true;
 }
 
@@ -556,6 +562,12 @@ void usb_headset_volume_handler(int8_t bChannelNumber, int16_t volume_in) {
 	current_settings.spk_volume_db[bChannelNumber] = vol_to_db_convert_enc(
 			current_settings.spk_mute[bChannelNumber],
 			current_settings.spk_volume[bChannelNumber]);
+
+	current_settings.spk_volume_mul_db[0] = current_settings.spk_volume_db[0]
+			* current_settings.spk_volume_db[1]; // Left ch volume
+	current_settings.spk_volume_mul_db[1] = current_settings.spk_volume_db[0]
+			* current_settings.spk_volume_db[2]; // Right ch volume
+
 	current_settings.status_updated = true;
 }
 
@@ -588,9 +600,8 @@ void usb_headset_current_status_set_handler(uint8_t itf,
 void usb_headset_tud_audio_rx_done_pre_read_handler(uint8_t rhport,
 		uint16_t n_bytes_received, uint8_t func_id, uint8_t ep_out,
 		uint8_t cur_alt_setting) {
-	uint16_t volume_db_master = current_settings.spk_volume_db[0];
-	uint16_t volume_db_left = current_settings.spk_volume_db[1];
-	uint16_t volume_db_right = current_settings.spk_volume_db[2];
+	uint32_t volume_db_left = current_settings.spk_volume_mul_db[0];
+	uint32_t volume_db_right = current_settings.spk_volume_mul_db[1];
 
 	if (current_settings.spk_blink_interval_ms == BLINK_STREAMING) {
 		// Speaker data size received in the last frame
@@ -609,13 +620,8 @@ void usb_headset_tud_audio_rx_done_pre_read_handler(uint8_t rhport,
 				int32_t left = in[i * 2 + 0];
 				int32_t right = in[i * 2 + 1];
 
-				left <<= 16;
-				right <<= 16;
-
-				left = usb_to_i2s_32b_sample_convert(left, volume_db_left);
-				left = usb_to_i2s_32b_sample_convert(left, volume_db_master);
-				right = usb_to_i2s_32b_sample_convert(right, volume_db_right);
-				right = usb_to_i2s_32b_sample_convert(right, volume_db_master);
+				left = usb_to_i2s_16b_sample_convert(left, volume_db_left);
+				right = usb_to_i2s_16b_sample_convert(right, volume_db_right);
 
 				spk_32b_i2s_buffer[i].left = left;
 				spk_32b_i2s_buffer[i].right = right;
@@ -633,9 +639,7 @@ void usb_headset_tud_audio_rx_done_pre_read_handler(uint8_t rhport,
 				int32_t right = in[i * 2 + 1];
 
 				left = usb_to_i2s_32b_sample_convert(left, volume_db_left);
-				left = usb_to_i2s_32b_sample_convert(left, volume_db_master);
 				right = usb_to_i2s_32b_sample_convert(right, volume_db_right);
-				right = usb_to_i2s_32b_sample_convert(right, volume_db_master);
 
 				spk_32b_i2s_buffer[i].left = left;
 				spk_32b_i2s_buffer[i].right = right;
@@ -714,18 +718,18 @@ void usb_headset_tud_audio_tx_done_post_load_handler(uint8_t rhport,
 	}
 }
 
-int32_t usb_to_i2s_32b_sample_convert(int32_t sample, uint16_t volume_db) {
+int32_t usb_to_i2s_32b_sample_convert(int32_t sample, uint32_t volume_db) {
 	int64_t sample_tmp = (int64_t) sample * (int64_t) volume_db;
-	sample_tmp = sample_tmp >> 15;
+	sample_tmp = sample_tmp >> 30;
 	return (int32_t) sample_tmp;
-	//return (int32_t)sample;
+//	return (int32_t)sample;
 }
 
-int16_t usb_to_i2s_16b_sample_convert(int16_t sample, uint16_t volume_db) {
-	int32_t sample_tmp = (int32_t) sample * (int32_t) volume_db;
-	sample_tmp = sample_tmp >> 15;
-	return (int16_t) sample_tmp;
-	//return (int16_t)sample;
+int32_t usb_to_i2s_16b_sample_convert(int32_t sample, uint32_t volume_db) {
+	int64_t sample_tmp = (int64_t) sample * (int64_t) volume_db;
+	sample_tmp = sample_tmp >> (30 - 16);
+	return (int32_t) sample_tmp;
+//	return (int32_t)sample;
 }
 
 //--------------------------------------------------------------------+
@@ -969,7 +973,6 @@ void display_ssd1306_info(void) {
 
 		strcat(vol_m_str, " Mute: ");
 		strcat(vol_m_str, (current_settings.spk_mute[0] ? "T" : "F"));
-
 
 		memset(fmt_tmp_str, 0x0, sizeof(fmt_tmp_str));
 		itoa((current_settings.spk_volume[1] >> ENC_NUM_OF_FP_BITS),
