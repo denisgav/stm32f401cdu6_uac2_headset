@@ -60,6 +60,11 @@ void Error_Handler(void);
 /* Private defines -----------------------------------------------------------*/
 #define ONBOARD_LED_Pin GPIO_PIN_13
 #define ONBOARD_LED_GPIO_Port GPIOC
+#define USR_MIC_MUTE_BTN_Pin GPIO_PIN_10
+#define USR_MIC_MUTE_BTN_GPIO_Port GPIOA
+#define USR_MIC_MUTE_BTN_EXTI_IRQn EXTI15_10_IRQn
+#define LED_MIC_MUTE_Pin GPIO_PIN_9
+#define LED_MIC_MUTE_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
 #ifndef I2S_SPK_RATE_DEF

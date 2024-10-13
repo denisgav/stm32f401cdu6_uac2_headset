@@ -23,6 +23,7 @@ typedef struct _usb_headset_settings_t {
 
 	uint8_t mic_resolution;
 	uint32_t mic_blink_interval_ms;
+	bool usr_mic_mute;
 
 	uint16_t samples_in_i2s_frame_min;
 	uint16_t samples_in_i2s_frame_max;
